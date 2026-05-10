@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../screens/calendar_screen.dart';
+import '../screens/calendar_categories_screen.dart';
 import '../screens/family_setup_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/menus_screen.dart';
+import '../screens/modules_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/shopping_screen.dart';
 import '../screens/tasks_screen.dart';
@@ -44,7 +46,7 @@ final appRouter = GoRouter(
       return loggingIn ? null : '/login';
     }
 
-    if (loggingIn) return '/family-setup';
+    if (loggingIn) return '/home';
     return null;
   },
   routes: [
@@ -67,7 +69,9 @@ final appRouter = GoRouter(
         GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
         GoRoute(path: '/menus', builder: (_, __) => const MenusScreen()),
         GoRoute(path: '/calendar', builder: (_, __) => const CalendarScreen()),
+        GoRoute(path: '/calendar-categories', builder: (_, __) => const CalendarCategoriesScreen()),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
+        GoRoute(path: '/modules', builder: (_, __) => const ModulesScreen()),
       ],
     ),
   ],

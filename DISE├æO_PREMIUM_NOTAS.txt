@@ -1,0 +1,18 @@
+Diseño premium aplicado sobre la versión con push automático.
+
+Cambios principales:
+- Nuevo tema claro/oscuro con Material 3.
+- Fondo degradado premium en toda la app.
+- Tarjetas tipo glass panel.
+- Bottom navigation flotante.
+- Login rediseñado.
+- Compra y tareas rediseñadas con métricas, filtros y estados vacíos.
+- Home conserva familia activa, chat, acciones rápidas y push automático.
+
+Instalación:
+1. Sustituye tu carpeta lib por la del ZIP.
+2. flutter clean
+3. flutter pub get
+4. flutter run
+
+No requiere SQL nuevo respecto a la versión anterior.

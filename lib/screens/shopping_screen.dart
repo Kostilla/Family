@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../providers/app_providers.dart';
+import '../widgets/pro_widgets.dart';
 
 class ShoppingScreen extends ConsumerStatefulWidget {
   const ShoppingScreen({super.key});
@@ -13,6 +15,17 @@ class ShoppingScreen extends ConsumerStatefulWidget {
 class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
   final textCtrl = TextEditingController();
   final qtyCtrl = TextEditingController();
+  final searchCtrl = TextEditingController();
+  bool showBought = true;
+  bool addExpanded = false;
+
+  @override
+  void dispose() {
+    textCtrl.dispose();
+    qtyCtrl.dispose();
+    searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,81 +36,186 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (familyId) {
-        if (familyId == null) {
-          return const Center(child: Text('No hay familia activa.'));
-        }
+        if (familyId == null) return const RequireFamily();
 
         return StreamBuilder(
           stream: repo.shopping(familyId),
           builder: (context, snapshot) {
-            final items = snapshot.data ?? [];
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            final allItems = snapshot.data ?? [];
+            final query = searchCtrl.text.trim().toLowerCase();
+            final items = allItems.where((item) {
+              final matchesQuery = query.isEmpty ||
+                  item.text.toLowerCase().contains(query) ||
+                  (item.qty ?? '').toLowerCase().contains(query);
+              final matchesBought = showBought || !item.isDone;
+              return matchesQuery && matchesBought;
+            }).toList();
+
+            final pending = allItems.where((e) => !e.isDone).length;
+            final bought = allItems.where((e) => e.isDone).length;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(2, 2, 2, 24),
               children: [
-                Text('Compra', style: Theme.of(context).textTheme.headlineMedium),
+                ProHeader(
+                  icon: Icons.shopping_bag_rounded,
+                  title: 'Compra',
+                  subtitle: pending == 0 ? 'Lista familiar al día' : '$pending producto(s) pendiente(s)',
+                  action: IconButton.filledTonal(
+                    tooltip: 'Eliminar comprados',
+                    onPressed: bought == 0 ? null : () => _confirmClear(familyId, bought),
+                    icon: const Icon(Icons.cleaning_services_outlined),
+                  ),
+                ),
                 const SizedBox(height: 12),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: textCtrl,
-                        decoration: const InputDecoration(labelText: 'Producto'),
-                      ),
+                    MetricPill(icon: Icons.radio_button_unchecked, label: 'Pendientes', value: '$pending'),
+                    MetricPill(icon: Icons.check_circle_outline, label: 'Comprados', value: '$bought'),
+                    FilterChip(
+                      label: const Text('Mostrar comprados'),
+                      selected: showBought,
+                      onSelected: (value) => setState(() => showBought = value),
                     ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 100,
-                      child: TextField(
-                        controller: qtyCtrl,
-                        decoration: const InputDecoration(labelText: 'Cantidad'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () async {
-                        if (textCtrl.text.trim().isEmpty) return;
-                        await repo.addShopping(
-                          familyId: familyId,
-                          text: textCtrl.text,
-                          qty: qtyCtrl.text.trim().isEmpty ? null : qtyCtrl.text,
-                        );
-                        textCtrl.clear();
-                        qtyCtrl.clear();
-                      },
-                      child: const Text('Añadir'),
-                    )
                   ],
                 ),
                 const SizedBox(height: 12),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return CheckboxListTile(
+                SectionCard(
+                  icon: Icons.add_shopping_cart_rounded,
+                  title: addExpanded ? 'Añadir producto' : 'Añadir producto rápido',
+                  subtitle: addExpanded
+                      ? 'Completa los campos y guárdalo en la lista familiar.'
+                      : 'Toca para desplegar el formulario.',
+                  trailing: IconButton.filledTonal(
+                    tooltip: addExpanded ? 'Contraer' : 'Añadir producto',
+                    onPressed: () => setState(() => addExpanded = !addExpanded),
+                    icon: Icon(addExpanded ? Icons.keyboard_arrow_up_rounded : Icons.add_rounded),
+                  ),
+                  child: AnimatedCrossFade(
+                    duration: const Duration(milliseconds: 220),
+                    crossFadeState: addExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                    firstChild: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() => addExpanded = true),
+                        icon: const Icon(Icons.add_shopping_cart_rounded),
+                        label: const Text('Añadir producto'),
+                      ),
+                    ),
+                    secondChild: Column(
+                      children: [
+                        TextField(
+                          controller: textCtrl,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.shopping_basket_outlined),
+                            labelText: 'Producto',
+                          ),
+                          onSubmitted: (_) => _addItem(familyId),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: qtyCtrl,
+                                decoration: const InputDecoration(
+                                  prefixIcon: Icon(Icons.numbers_outlined),
+                                  labelText: 'Cantidad',
+                                ),
+                                onSubmitted: (_) => _addItem(familyId),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.icon(
+                              onPressed: () => _addItem(familyId),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Añadir'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: searchCtrl,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    labelText: 'Buscar en la lista',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+                else if (items.isEmpty)
+                  EmptyState(
+                    icon: Icons.shopping_bag_outlined,
+                    title: allItems.isEmpty ? 'Lista vacía' : 'No hay resultados',
+                    message: allItems.isEmpty
+                        ? 'Añade el primer producto para verlo todos en tiempo real.'
+                        : 'Prueba otro filtro o muestra los productos comprados.',
+                  )
+                else
+                  ...items.map(
+                    (item) => GlassPanel(
+                      padding: EdgeInsets.zero,
+                      child: CheckboxListTile(
                         value: item.isDone,
                         onChanged: (_) => repo.toggleShopping(item),
                         title: Text(
-                          item.text,
+                          item.text.isEmpty ? 'Producto sin nombre' : item.text,
                           style: TextStyle(
-                            decoration:
-                                item.isDone ? TextDecoration.lineThrough : null,
+                            fontWeight: FontWeight.w700,
+                            decoration: item.isDone ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        subtitle: Text(item.qty ?? ''),
+                        subtitle: item.qty == null || item.qty!.isEmpty ? null : Text(item.qty!),
                         secondary: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => repo.deleteShopping(item.id),
                         ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
-                ),
               ],
             );
           },
         );
       },
     );
+  }
+
+  Future<void> _confirmClear(String familyId, int bought) async {
+    final repo = ref.read(repositoriesProvider);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar comprados'),
+        content: Text('Se eliminarán $bought productos marcados.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (ok == true) await repo.clearBoughtShopping(familyId);
+  }
+
+  Future<void> _addItem(String familyId) async {
+    final repo = ref.read(repositoriesProvider);
+    final text = textCtrl.text.trim();
+    if (text.isEmpty) return;
+    await repo.addShopping(
+      familyId: familyId,
+      text: text,
+      qty: qtyCtrl.text.trim().isEmpty ? null : qtyCtrl.text.trim(),
+    );
+    textCtrl.clear();
+    qtyCtrl.clear();
   }
 }

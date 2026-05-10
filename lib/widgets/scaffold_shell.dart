@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class AppShell extends StatelessWidget {
+import '../models/module_models.dart';
+import '../providers/app_providers.dart';
+import 'pro_widgets.dart';
+
+class AppShell extends ConsumerWidget {
   const AppShell({
     super.key,
     required this.child,
@@ -11,59 +16,106 @@ class AppShell extends StatelessWidget {
   final Widget child;
   final String location;
 
-  int _index(String location) {
-    if (location.startsWith('/shopping')) return 1;
-    if (location.startsWith('/tasks')) return 2;
-    if (location.startsWith('/menus')) return 3;
-    if (location.startsWith('/calendar')) return 4;
-    if (location.startsWith('/settings')) return 5;
-    return 0;
+  int _index(String location, List<_NavItem> items) {
+    final index = items.indexWhere((item) => location.startsWith(item.route));
+    return index < 0 ? 0 : index;
+  }
+
+  List<_NavItem> _items(EnabledModules modules) {
+    return [
+      const _NavItem(
+        route: '/home',
+        icon: Icons.home_rounded,
+        label: 'Inicio',
+      ),
+      ...modules.navModules.map(
+        (module) => _NavItem(
+          route: module.route,
+          icon: module.icon,
+          label: module.title,
+        ),
+      ),
+      const _NavItem(
+        route: '/settings',
+        icon: Icons.tune_rounded,
+        label: 'Ajustes',
+      ),
+    ];
   }
 
   @override
-  Widget build(BuildContext context) {
-    final index = _index(location);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final modulesAsync = ref.watch(familyModulesProvider);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: child,
+    return modulesAsync.when(
+      loading: () => Scaffold(
+        body: PremiumBackground(
+          child: const Center(child: CircularProgressIndicator()),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) {
-          switch (i) {
-            case 0:
-              context.go('/home');
-              break;
-            case 1:
-              context.go('/shopping');
-              break;
-            case 2:
-              context.go('/tasks');
-              break;
-            case 3:
-              context.go('/menus');
-              break;
-            case 4:
-              context.go('/calendar');
-              break;
-            case 5:
-              context.go('/settings');
-              break;
-          }
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Inicio'),
-          NavigationDestination(icon: Icon(Icons.shopping_cart_outlined), label: 'Compra'),
-          NavigationDestination(icon: Icon(Icons.checklist_outlined), label: 'Tareas'),
-          NavigationDestination(icon: Icon(Icons.restaurant_menu_outlined), label: 'Menús'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'Calendario'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Ajustes'),
-        ],
+      error: (_, __) => _buildShell(
+        context,
+        _items(EnabledModules({
+          for (final definition in familyModuleDefinitions) definition.key: definition.defaultEnabled,
+        })),
+      ),
+      data: (modules) => _buildShell(context, _items(modules)),
+    );
+  }
+
+  Widget _buildShell(BuildContext context, List<_NavItem> items) {
+    final selectedIndex = _index(location, items).clamp(0, items.length - 1);
+
+    return Scaffold(
+      extendBody: true,
+      body: PremiumBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 88),
+            child: child,
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor.withOpacity(.92),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant.withOpacity(.35),
+                ),
+              ),
+              child: NavigationBar(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: (i) => context.go(items[i].route),
+                destinations: [
+                  for (final item in items)
+                    NavigationDestination(
+                      icon: Icon(item.icon),
+                      label: item.label,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _NavItem {
+  final String route;
+  final IconData icon;
+  final String label;
+
+  const _NavItem({
+    required this.route,
+    required this.icon,
+    required this.label,
+  });
 }

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
 import 'package:uuid/uuid.dart';
@@ -17,8 +15,6 @@ class Repositories {
         .from('shopping_items')
         .stream(primaryKey: ['id'])
         .eq('family_id', familyId)
-        .order('is_done')
-        .order('updated_at')
         .map((rows) => rows
             .map((e) => ShoppingItemModel.fromMap(e))
             .toList()
@@ -37,25 +33,68 @@ class Repositories {
     String? category,
     String listName = 'principal',
   }) async {
-    await sb.from('shopping_items').insert({
-      'id': _uuid.v4(),
-      'family_id': familyId,
-      'text': text.trim(),
-      'qty': qty,
-      'category': category,
-      'list_name': listName,
-      'added_by': sb.auth.currentUser!.id,
-    });
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) return;
+    final id = _uuid.v4();
+    final userId = sb.auth.currentUser!.id;
+
+    // Primero intenta el esquema PRO; si tu Supabase aún está simplificado, cae al mínimo compatible.
+    try {
+      await sb.from('shopping_items').insert({
+        'id': id,
+        'family_id': familyId,
+        'name': cleanText,
+        'text': cleanText,
+        'qty': qty,
+        'category': category,
+        'list_name': listName,
+        'done': false,
+        'is_done': false,
+        'created_by': userId,
+        'added_by': userId,
+      });
+    } catch (_) {
+      await sb.from('shopping_items').insert({
+        'id': id,
+        'family_id': familyId,
+        'name': cleanText,
+        'done': false,
+        'created_by': userId,
+      });
+    }
   }
 
   Future<void> toggleShopping(ShoppingItemModel item) async {
-    await sb.from('shopping_items').update({
-      'is_done': !item.isDone,
-    }).eq('id', item.id);
+    final next = !item.isDone;
+    try {
+      await sb.from('shopping_items').update({
+        'done': next,
+        'is_done': next,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', item.id);
+    } catch (_) {
+      await sb.from('shopping_items').update({'done': next}).eq('id', item.id);
+    }
   }
 
   Future<void> deleteShopping(String id) async {
     await sb.from('shopping_items').delete().eq('id', id);
+  }
+
+  Future<void> clearBoughtShopping(String familyId) async {
+    try {
+      await sb
+          .from('shopping_items')
+          .delete()
+          .eq('family_id', familyId)
+          .or('done.eq.true,is_done.eq.true');
+    } catch (_) {
+      await sb
+          .from('shopping_items')
+          .delete()
+          .eq('family_id', familyId)
+          .eq('done', true);
+    }
   }
 
   Stream<List<TaskModel>> tasks(String familyId) {
@@ -66,7 +105,9 @@ class Repositories {
         .map((rows) => rows.map((e) => TaskModel.fromMap(e)).toList()
           ..sort((a, b) {
             if (a.isDone == b.isDone) {
-              if (a.dueAt == null && b.dueAt == null) return 0;
+              if (a.dueAt == null && b.dueAt == null) {
+                return b.updatedAt.compareTo(a.updatedAt);
+              }
               if (a.dueAt == null) return 1;
               if (b.dueAt == null) return -1;
               return a.dueAt!.compareTo(b.dueAt!);
@@ -81,21 +122,45 @@ class Repositories {
     String? notes,
     DateTime? dueAt,
   }) async {
-    await sb.from('tasks').insert({
-      'id': _uuid.v4(),
-      'family_id': familyId,
-      'title': title.trim(),
-      'notes': notes,
-      'due_at': dueAt?.toIso8601String(),
-      'created_by': sb.auth.currentUser!.id,
-      'assigned_to': sb.auth.currentUser!.id,
-    });
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) return;
+    final id = _uuid.v4();
+    final userId = sb.auth.currentUser!.id;
+    try {
+      await sb.from('tasks').insert({
+        'id': id,
+        'family_id': familyId,
+        'title': cleanTitle,
+        'notes': notes,
+        'due_at': dueAt?.toIso8601String(),
+        'completed': false,
+        'is_done': false,
+        'created_by': userId,
+        'assigned_to': userId,
+      });
+    } catch (_) {
+      await sb.from('tasks').insert({
+        'id': id,
+        'family_id': familyId,
+        'title': cleanTitle,
+        'completed': false,
+        'created_by': userId,
+        'assigned_to': userId,
+      });
+    }
   }
 
   Future<void> toggleTask(TaskModel task) async {
-    await sb.from('tasks').update({
-      'is_done': !task.isDone,
-    }).eq('id', task.id);
+    final next = !task.isDone;
+    try {
+      await sb.from('tasks').update({
+        'completed': next,
+        'is_done': next,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', task.id);
+    } catch (_) {
+      await sb.from('tasks').update({'completed': next}).eq('id', task.id);
+    }
   }
 
   Future<void> deleteTask(String id) async {
@@ -103,25 +168,29 @@ class Repositories {
   }
 
   Stream<List<ChatMessageModel>> chat(String familyId) {
+    // Compatible con tu tabla actual: chat_messages(content, author_id, created_at).
+    // No dependemos de vistas SQL adicionales como chat_message_feed.
     return sb
-        .from('chat_message_feed')
+        .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('family_id', familyId)
-        .order('created_at')
-        .map((rows) =>
-            rows.map((e) => ChatMessageModel.fromMap(e)).toList()
-              ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+        .map((rows) => rows
+            .map((e) => ChatMessageModel.fromMap(e))
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
   }
 
   Future<void> sendChat({
     required String familyId,
     required String text,
   }) async {
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) return;
     await sb.from('chat_messages').insert({
       'id': _uuid.v4(),
       'family_id': familyId,
-      'text': text.trim(),
-      'created_by': sb.auth.currentUser!.id,
+      'content': cleanText,
+      'author_id': sb.auth.currentUser!.id,
     });
   }
 
@@ -151,6 +220,59 @@ class Repositories {
     });
   }
 
+  Stream<List<CalendarCategoryModel>> calendarCategories(String familyId) {
+    return sb
+        .from('event_categories')
+        .stream(primaryKey: ['id'])
+        .eq('family_id', familyId)
+        .map((rows) => rows
+            .map((e) => CalendarCategoryModel.fromMap(e))
+            .toList()
+          ..sort((a, b) {
+            final order = a.sortOrder.compareTo(b.sortOrder);
+            if (order != 0) return order;
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          }));
+  }
+
+  Future<List<CalendarCategoryModel>> calendarCategoriesOnce(String familyId) async {
+    final rows = await sb
+        .from('event_categories')
+        .select('*')
+        .eq('family_id', familyId)
+        .order('sort_order');
+    return (rows as List)
+        .map((e) => CalendarCategoryModel.fromMap(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<void> upsertCalendarCategory({
+    String? id,
+    required String familyId,
+    required String name,
+    required String color,
+    int sortOrder = 0,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) return;
+
+    final payload = {
+      'id': id ?? _uuid.v4(),
+      'family_id': familyId,
+      'name': cleanName,
+      'color': color,
+      'sort_order': sortOrder,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    await sb.from('event_categories').upsert(payload, onConflict: 'id');
+  }
+
+  Future<void> deleteCalendarCategory(String id) async {
+    await sb.from('events').update({'category_id': null}).eq('category_id', id);
+    await sb.from('event_categories').delete().eq('id', id);
+  }
+
   Stream<List<EventModel>> events(String familyId) {
     return sb
         .from('events')
@@ -165,16 +287,60 @@ class Repositories {
     required DateTime startAt,
     required DateTime endAt,
     String? notes,
+    String? categoryId,
   }) async {
-    await sb.from('events').insert({
-      'id': _uuid.v4(),
-      'family_id': familyId,
-      'title': title.trim(),
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) return;
+    final id = _uuid.v4();
+    try {
+      await sb.from('events').insert({
+        'id': id,
+        'family_id': familyId,
+        'title': cleanTitle,
+        'notes': notes,
+        'start_at': startAt.toIso8601String(),
+        'end_at': endAt.toIso8601String(),
+        'event_date': startAt.toIso8601String().split('T').first,
+        'created_by': sb.auth.currentUser!.id,
+        'category_id': categoryId,
+      });
+    } catch (_) {
+      await sb.from('events').insert({
+        'id': id,
+        'family_id': familyId,
+        'title': cleanTitle,
+        'event_date': startAt.toIso8601String().split('T').first,
+      });
+    }
+  }
+
+  Future<void> updateEvent({
+    required String id,
+    required String title,
+    required DateTime startAt,
+    required DateTime endAt,
+    String? notes,
+    String? categoryId,
+  }) async {
+    final cleanTitle = title.trim();
+    if (cleanTitle.isEmpty) return;
+    final payload = {
+      'title': cleanTitle,
       'notes': notes,
       'start_at': startAt.toIso8601String(),
       'end_at': endAt.toIso8601String(),
-      'created_by': sb.auth.currentUser!.id,
-    });
+      'event_date': startAt.toIso8601String().split('T').first,
+      'category_id': categoryId,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    try {
+      await sb.from('events').update(payload).eq('id', id);
+    } catch (_) {
+      await sb.from('events').update({
+        'title': cleanTitle,
+        'event_date': startAt.toIso8601String().split('T').first,
+      }).eq('id', id);
+    }
   }
 
   Future<void> deleteEvent(String id) async {

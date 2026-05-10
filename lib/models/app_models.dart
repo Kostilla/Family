@@ -11,11 +11,16 @@ class FamilySummary {
     required this.isCurrent,
   });
 
+  static String _string(dynamic value, {String fallback = ''}) {
+    if (value == null) return fallback;
+    return value.toString();
+  }
+
   factory FamilySummary.fromMap(Map<String, dynamic> map) {
     return FamilySummary(
-      id: map['family_id'] as String,
-      name: map['family_name'] as String,
-      role: map['role'] as String,
+      id: _string(map['family_id'] ?? map['id']),
+      name: _string(map['family_name'] ?? map['name'], fallback: 'Familia'),
+      role: _string(map['role'], fallback: 'adult'),
       isCurrent: (map['is_current'] as bool?) ?? false,
     );
   }
@@ -46,15 +51,15 @@ class ShoppingItemModel {
 
   factory ShoppingItemModel.fromMap(Map<String, dynamic> map) {
     return ShoppingItemModel(
-      id: map['id'] as String,
-      familyId: map['family_id'] as String,
-      text: map['text'] as String,
-      qty: map['qty'] as String?,
-      category: map['category'] as String?,
-      isDone: map['is_done'] as bool? ?? false,
-      listName: map['list_name'] as String? ?? 'principal',
-      updatedAt: DateTime.parse(map['updated_at'] as String),
-      addedBy: map['added_by'] as String?,
+      id: (map['id'] ?? '').toString(),
+      familyId: (map['family_id'] ?? '').toString(),
+      text: (map['text'] ?? map['name'] ?? '').toString(),
+      qty: map['qty']?.toString(),
+      category: map['category']?.toString(),
+      isDone: (map['is_done'] ?? map['done'] ?? false) as bool,
+      listName: (map['list_name'] ?? 'principal').toString(),
+      updatedAt: DateTime.tryParse((map['updated_at'] ?? map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
+      addedBy: map['added_by']?.toString() ?? map['created_by']?.toString(),
     );
   }
 }
@@ -83,15 +88,15 @@ class TaskModel {
   });
 
   factory TaskModel.fromMap(Map<String, dynamic> map) => TaskModel(
-        id: map['id'] as String,
-        familyId: map['family_id'] as String,
-        title: map['title'] as String,
-        notes: map['notes'] as String?,
-        isDone: map['is_done'] as bool? ?? false,
-        dueAt: map['due_at'] != null ? DateTime.parse(map['due_at'] as String) : null,
-        createdBy: map['created_by'] as String?,
-        assignedTo: map['assigned_to'] as String?,
-        updatedAt: DateTime.parse(map['updated_at'] as String),
+        id: (map['id'] ?? '').toString(),
+        familyId: (map['family_id'] ?? '').toString(),
+        title: (map['title'] ?? '').toString(),
+        notes: map['notes']?.toString(),
+        isDone: (map['is_done'] ?? map['completed'] ?? false) as bool,
+        dueAt: map['due_at'] != null ? DateTime.tryParse(map['due_at'].toString()) : null,
+        createdBy: map['created_by']?.toString(),
+        assignedTo: map['assigned_to']?.toString(),
+        updatedAt: DateTime.tryParse((map['updated_at'] ?? map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       );
 }
 
@@ -113,13 +118,40 @@ class ChatMessageModel {
   });
 
   factory ChatMessageModel.fromMap(Map<String, dynamic> map) => ChatMessageModel(
-        id: map['id'] as String,
-        familyId: map['family_id'] as String,
-        text: map['text'] as String,
-        createdBy: map['created_by'] as String,
-        authorName: (map['author_name'] as String?) ?? 'Usuario',
-        createdAt: DateTime.parse(map['created_at'] as String),
+        id: (map['id'] ?? '').toString(),
+        familyId: (map['family_id'] ?? '').toString(),
+        text: (map['text'] ?? map['content'] ?? '').toString(),
+        createdBy: (map['created_by'] ?? map['author_id'] ?? '').toString(),
+        authorName: (map['author_name'] ?? map['display_name'] ?? 'Usuario').toString(),
+        createdAt: DateTime.tryParse((map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       );
+}
+
+
+class CalendarCategoryModel {
+  final String id;
+  final String familyId;
+  final String name;
+  final String color;
+  final int sortOrder;
+
+  CalendarCategoryModel({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.color,
+    required this.sortOrder,
+  });
+
+  factory CalendarCategoryModel.fromMap(Map<String, dynamic> map) {
+    return CalendarCategoryModel(
+      id: (map['id'] ?? '').toString(),
+      familyId: (map['family_id'] ?? '').toString(),
+      name: (map['name'] ?? 'Categoría').toString(),
+      color: (map['color'] ?? map['color_hex'] ?? '#3B82F6').toString(),
+      sortOrder: map['sort_order'] is int ? map['sort_order'] as int : int.tryParse((map['sort_order'] ?? '0').toString()) ?? 0,
+    );
+  }
 }
 
 class EventModel {
@@ -146,15 +178,15 @@ class EventModel {
   });
 
   factory EventModel.fromMap(Map<String, dynamic> map) => EventModel(
-        id: map['id'] as String,
-        familyId: map['family_id'] as String,
-        title: map['title'] as String,
-        notes: map['notes'] as String?,
-        startAt: DateTime.parse(map['start_at'] as String),
-        endAt: DateTime.parse(map['end_at'] as String),
+        id: (map['id'] ?? '').toString(),
+        familyId: (map['family_id'] ?? '').toString(),
+        title: (map['title'] ?? '').toString(),
+        notes: map['notes']?.toString(),
+        startAt: DateTime.tryParse((map['start_at'] ?? map['event_date'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
+        endAt: DateTime.tryParse((map['end_at'] ?? map['event_date'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
         allDay: map['all_day'] as bool? ?? false,
-        color: map['color'] as String?,
-        categoryId: map['category_id'] as String?,
+        color: map['color']?.toString(),
+        categoryId: map['category_id']?.toString(),
       );
 }
 
@@ -176,12 +208,12 @@ class MealEntryModel {
   });
 
   factory MealEntryModel.fromMap(Map<String, dynamic> map) => MealEntryModel(
-        id: map['id'] as String,
-        familyId: map['family_id'] as String,
-        day: DateTime.parse(map['day_date'] as String),
-        mealType: map['meal_type'] as String,
-        text: map['text'] as String,
-        createdBy: map['created_by'] as String?,
+        id: (map['id'] ?? '').toString(),
+        familyId: (map['family_id'] ?? '').toString(),
+        day: DateTime.tryParse((map['day_date'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
+        mealType: (map['meal_type'] ?? '').toString(),
+        text: (map['text'] ?? '').toString(),
+        createdBy: map['created_by']?.toString(),
       );
 }
 
@@ -215,17 +247,17 @@ class FamilyAttachment {
   });
 
   factory FamilyAttachment.fromMap(Map<String, dynamic> map) => FamilyAttachment(
-        id: map['id'] as String,
-        familyId: map['family_id'] as String,
-        shoppingItemId: map['shopping_item_id'] as String?,
-        taskId: map['task_id'] as String?,
-        chatMessageId: map['chat_message_id'] as String?,
-        eventId: map['event_id'] as String?,
-        path: map['storage_path'] as String,
-        originalName: map['original_name'] as String,
-        mimeType: map['mime_type'] as String?,
+        id: (map['id'] ?? '').toString(),
+        familyId: (map['family_id'] ?? '').toString(),
+        shoppingItemId: map['shopping_item_id']?.toString(),
+        taskId: map['task_id']?.toString(),
+        chatMessageId: map['chat_message_id']?.toString(),
+        eventId: map['event_id']?.toString(),
+        path: (map['storage_path'] ?? '').toString(),
+        originalName: (map['original_name'] ?? '').toString(),
+        mimeType: map['mime_type']?.toString(),
         sizeBytes: map['size_bytes'] as int?,
-        createdBy: map['created_by'] as String,
-        createdAt: DateTime.parse(map['created_at'] as String),
+        createdBy: (map['created_by'] ?? '').toString(),
+        createdAt: DateTime.tryParse((map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       );
 }

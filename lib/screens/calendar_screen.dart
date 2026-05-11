@@ -54,6 +54,29 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   String _dateLabel(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+  String _timeLabel(DateTime date) => '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+
+  String _eventTimeLabel(EventModel event) {
+    if (event.allDay) return 'Todo el día';
+    return '${_timeLabel(event.startAt)} - ${_timeLabel(event.endAt)}';
+  }
+
+  int? _parseTimeToMinutes(String input) {
+    final value = input.trim();
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value);
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  DateTime _dateTimeFromMinutes(DateTime day, int minutes) {
+    final base = DateTime(day.year, day.month, day.day);
+    return base.add(Duration(minutes: minutes));
+  }
+
   DateTime _monthDelta(DateTime date, int delta) {
     return DateTime(date.year, date.month + delta, 1);
   }
@@ -157,7 +180,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                     subtitle: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(_categoryName(event, categoryById)),
+                                        Text('${_eventTimeLabel(event)} · ${_categoryName(event, categoryById)}'),
                                         if (event.notes != null && event.notes!.trim().isNotEmpty) Text(event.notes!),
                                       ],
                                     ),
@@ -207,7 +230,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(event.title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                          Text(_categoryName(event, categoryById)),
+                          Text('${_eventTimeLabel(event)} · ${_categoryName(event, categoryById)}'),
                         ],
                       ),
                     ),
@@ -276,6 +299,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final repo = ref.read(repositoriesProvider);
     final titleCtrl = TextEditingController(text: event?.title ?? '');
     final notesCtrl = TextEditingController(text: event?.notes ?? '');
+    final startCtrl = TextEditingController(text: event == null ? '10:00' : _timeLabel(event.startAt));
+    final endCtrl = TextEditingController(text: event == null ? '11:00' : _timeLabel(event.endAt));
+    bool allDay = event?.allDay ?? false;
+    String? timeError;
     String? categoryId = event?.categoryId;
     if (categoryId != null && !categoryById.containsKey(categoryId)) categoryId = null;
     categoryId ??= categories.isEmpty ? null : categories.first.id;
@@ -285,6 +312,82 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            Widget timeFields() {
+              if (allDay) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Text('Evento marcado como todo el día.'),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Hora inicio',
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: startCtrl,
+                              keyboardType: TextInputType.datetime,
+                              decoration: const InputDecoration(
+                                hintText: '09:30',
+                                helperText: 'Ej. 09:30',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Hora final',
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: endCtrl,
+                              keyboardType: TextInputType.datetime,
+                              decoration: const InputDecoration(
+                                hintText: '18:00 o 00:30',
+                                helperText: 'Ej. 18:00 o 00:30',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Usa horas reales entre 00:00 y 23:59. Si la hora final es menor que la inicial, se interpreta que termina después de medianoche y seguirá apareciendo solo en este día.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  if (timeError != null) ...[
+                    const SizedBox(height: 6),
+                    Text(timeError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ],
+                ],
+              );
+            }
+
             return AlertDialog(
               title: Text(event == null ? 'Añadir evento' : 'Editar evento'),
               content: SingleChildScrollView(
@@ -296,6 +399,28 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       autofocus: true,
                       decoration: const InputDecoration(labelText: 'Título'),
                     ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Todo el día',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Switch.adaptive(
+                          value: allDay,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              allDay = value;
+                              timeError = null;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    timeFields(),
                     const SizedBox(height: 10),
                     if (categories.isNotEmpty)
                       DropdownButtonFormField<String>(
@@ -339,8 +464,27 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 FilledButton(
                   onPressed: () async {
                     if (titleCtrl.text.trim().isEmpty) return;
-                    final start = DateTime(day.year, day.month, day.day, event?.startAt.hour ?? 10, event?.startAt.minute ?? 0);
-                    final end = start.add(const Duration(hours: 1));
+
+                    DateTime start;
+                    DateTime end;
+                    if (allDay) {
+                      start = DateTime(day.year, day.month, day.day);
+                      end = DateTime(day.year, day.month, day.day, 23, 59);
+                    } else {
+                      final startMinutes = _parseTimeToMinutes(startCtrl.text);
+                      final rawEndMinutes = _parseTimeToMinutes(endCtrl.text);
+                      if (startMinutes == null || rawEndMinutes == null) {
+                        setDialogState(() => timeError = 'Formato no válido. Usa HH:mm entre 00:00 y 23:59.');
+                        return;
+                      }
+                      start = _dateTimeFromMinutes(day, startMinutes);
+                      var endMinutes = rawEndMinutes;
+                      if (endMinutes <= startMinutes) {
+                        endMinutes += 24 * 60;
+                      }
+                      end = _dateTimeFromMinutes(day, endMinutes);
+                    }
+
                     final notes = notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim();
                     if (event == null) {
                       await repo.addEvent(
@@ -349,6 +493,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         notes: notes,
                         startAt: start,
                         endAt: end,
+                        allDay: allDay,
                         categoryId: categoryId,
                       );
                     } else {
@@ -358,6 +503,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                         notes: notes,
                         startAt: start,
                         endAt: end,
+                        allDay: allDay,
                         categoryId: categoryId,
                       );
                     }
@@ -373,6 +519,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
     titleCtrl.dispose();
     notesCtrl.dispose();
+    startCtrl.dispose();
+    endCtrl.dispose();
   }
 
   @override

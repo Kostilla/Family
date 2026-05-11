@@ -138,10 +138,19 @@ class _QuickActions extends ConsumerWidget {
     return '$hh:$mm';
   }
 
+  String _extendedEndTime(EventModel event) {
+    final startDay = DateTime(event.startAt.year, event.startAt.month, event.startAt.day);
+    final diff = event.endAt.difference(startDay).inMinutes;
+    final safe = diff.clamp(0, 72 * 60);
+    final hh = (safe ~/ 60).toString().padLeft(2, '0');
+    final mm = (safe % 60).toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
   String _eventLine(EventModel event, Map<String, CalendarCategoryModel> categories) {
     final category = categories[event.categoryId];
     final categoryName = category?.name ?? 'Sin categoría';
-    final time = event.allDay ? 'Todo el día' : '${_time(event.startAt)}-${_time(event.endAt)}';
+    final time = event.allDay ? 'Todo el día' : '${_time(event.startAt)}-${_extendedEndTime(event)}';
     return '$time · $categoryName · ${event.title}';
   }
 

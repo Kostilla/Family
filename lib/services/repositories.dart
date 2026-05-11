@@ -286,6 +286,7 @@ class Repositories {
     required String title,
     required DateTime startAt,
     required DateTime endAt,
+    bool allDay = false,
     String? notes,
     String? categoryId,
   }) async {
@@ -300,6 +301,7 @@ class Repositories {
         'notes': notes,
         'start_at': startAt.toIso8601String(),
         'end_at': endAt.toIso8601String(),
+        'all_day': allDay,
         'event_date': startAt.toIso8601String().split('T').first,
         'created_by': sb.auth.currentUser!.id,
         'category_id': categoryId,
@@ -319,6 +321,7 @@ class Repositories {
     required String title,
     required DateTime startAt,
     required DateTime endAt,
+    bool allDay = false,
     String? notes,
     String? categoryId,
   }) async {
@@ -329,6 +332,7 @@ class Repositories {
       'notes': notes,
       'start_at': startAt.toIso8601String(),
       'end_at': endAt.toIso8601String(),
+      'all_day': allDay,
       'event_date': startAt.toIso8601String().split('T').first,
       'category_id': categoryId,
       'updated_at': DateTime.now().toIso8601String(),

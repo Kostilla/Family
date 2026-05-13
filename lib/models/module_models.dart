@@ -74,6 +74,16 @@ const familyModuleDefinitions = <FamilyModuleDefinition>[
     sortOrder: 30,
   ),
   FamilyModuleDefinition(
+    key: 'smart_menus',
+    title: 'Menús con compra',
+    subtitle: 'Recetas e ingredientes a compra',
+    icon: Icons.playlist_add_check_circle_rounded,
+    route: '/smart-menus',
+    showInNav: true,
+    defaultEnabled: false,
+    sortOrder: 35,
+  ),
+  FamilyModuleDefinition(
     key: 'calendar',
     title: 'Agenda',
     subtitle: 'Eventos y recordatorios',

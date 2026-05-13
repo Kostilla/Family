@@ -10,6 +10,7 @@ import '../screens/family_setup_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/menus_screen.dart';
+import '../screens/smart_menus_screen.dart';
 import '../screens/modules_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/shopping_screen.dart';
@@ -68,6 +69,7 @@ final appRouter = GoRouter(
         GoRoute(path: '/shopping', builder: (_, __) => const ShoppingScreen()),
         GoRoute(path: '/tasks', builder: (_, __) => const TasksScreen()),
         GoRoute(path: '/menus', builder: (_, __) => const MenusScreen()),
+        GoRoute(path: '/smart-menus', builder: (_, __) => const SmartMenusScreen()),
         GoRoute(path: '/calendar', builder: (_, __) => const CalendarScreen()),
         GoRoute(path: '/calendar-categories', builder: (_, __) => const CalendarCategoriesScreen()),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),

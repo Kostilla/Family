@@ -261,3 +261,115 @@ class FamilyAttachment {
         createdAt: DateTime.tryParse((map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       );
 }
+
+class SmartMenuIngredientModel {
+  final String id;
+  final String smartMenuId;
+  final String name;
+  final String? quantity;
+  final String? unit;
+  final int sortOrder;
+
+  SmartMenuIngredientModel({
+    required this.id,
+    required this.smartMenuId,
+    required this.name,
+    this.quantity,
+    this.unit,
+    required this.sortOrder,
+  });
+
+  factory SmartMenuIngredientModel.fromMap(Map<String, dynamic> map) {
+    return SmartMenuIngredientModel(
+      id: (map['id'] ?? '').toString(),
+      smartMenuId: (map['smart_menu_id'] ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      quantity: map['quantity']?.toString(),
+      unit: map['unit']?.toString(),
+      sortOrder: map['sort_order'] is int ? map['sort_order'] as int : int.tryParse((map['sort_order'] ?? '0').toString()) ?? 0,
+    );
+  }
+
+  String get displayName {
+    final parts = <String>[];
+    if (quantity != null && quantity!.trim().isNotEmpty) parts.add(quantity!.trim());
+    if (unit != null && unit!.trim().isNotEmpty) parts.add(unit!.trim());
+    if (parts.isEmpty) return name;
+    return '$name (${parts.join(' ')})';
+  }
+}
+
+class SmartMenuModel {
+  final String id;
+  final String familyId;
+  final String name;
+  final String mealType;
+  final String? notes;
+  final List<SmartMenuIngredientModel> ingredients;
+
+  SmartMenuModel({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.mealType,
+    this.notes,
+    this.ingredients = const [],
+  });
+
+  factory SmartMenuModel.fromMap(Map<String, dynamic> map) {
+    final rawIngredients = map['smart_menu_ingredients'] ?? map['ingredients'];
+    final ingredients = rawIngredients is List
+        ? rawIngredients
+            .whereType<Map>()
+            .map((e) => SmartMenuIngredientModel.fromMap(Map<String, dynamic>.from(e)))
+            .toList()
+        : <SmartMenuIngredientModel>[];
+
+    ingredients.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    return SmartMenuModel(
+      id: (map['id'] ?? '').toString(),
+      familyId: (map['family_id'] ?? '').toString(),
+      name: (map['name'] ?? 'Menú').toString(),
+      mealType: (map['meal_type'] ?? 'meal').toString(),
+      notes: map['notes']?.toString(),
+      ingredients: ingredients,
+    );
+  }
+}
+
+class SmartDailyMenuModel {
+  final String id;
+  final String familyId;
+  final DateTime menuDate;
+  final String mealSlot;
+  final String smartMenuId;
+  final bool shoppingConfirmed;
+  final DateTime? shoppingConfirmedAt;
+  final SmartMenuModel? menu;
+
+  SmartDailyMenuModel({
+    required this.id,
+    required this.familyId,
+    required this.menuDate,
+    required this.mealSlot,
+    required this.smartMenuId,
+    required this.shoppingConfirmed,
+    this.shoppingConfirmedAt,
+    this.menu,
+  });
+
+  factory SmartDailyMenuModel.fromMap(Map<String, dynamic> map) {
+    final menuMap = map['smart_menus'];
+    return SmartDailyMenuModel(
+      id: (map['id'] ?? '').toString(),
+      familyId: (map['family_id'] ?? '').toString(),
+      menuDate: DateTime.tryParse((map['menu_date'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
+      mealSlot: (map['meal_slot'] ?? 'lunch').toString(),
+      smartMenuId: (map['smart_menu_id'] ?? '').toString(),
+      shoppingConfirmed: (map['shopping_confirmed'] as bool?) ?? false,
+      shoppingConfirmedAt: map['shopping_confirmed_at'] == null ? null : DateTime.tryParse(map['shopping_confirmed_at'].toString()),
+      menu: menuMap is Map ? SmartMenuModel.fromMap(Map<String, dynamic>.from(menuMap)) : null,
+    );
+  }
+}

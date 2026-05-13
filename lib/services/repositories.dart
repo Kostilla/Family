@@ -406,4 +406,204 @@ class Repositories {
         .map((e) => FamilyAttachment.fromMap(Map<String, dynamic>.from(e)))
         .toList();
   }
+
+  Stream<List<SmartMenuModel>> smartMenus(String familyId) {
+    return sb
+        .from('smart_menus')
+        .stream(primaryKey: ['id'])
+        .eq('family_id', familyId)
+        .map((rows) async {
+          final menus = <SmartMenuModel>[];
+          for (final row in rows) {
+            final id = (row['id'] ?? '').toString();
+            final ingredientsRows = await sb
+                .from('smart_menu_ingredients')
+                .select('*')
+                .eq('smart_menu_id', id)
+                .order('sort_order');
+            final map = Map<String, dynamic>.from(row);
+            map['smart_menu_ingredients'] = ingredientsRows;
+            menus.add(SmartMenuModel.fromMap(map));
+          }
+          menus.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+          return menus;
+        })
+        .asyncMap((future) => future);
+  }
+
+  Future<List<SmartMenuModel>> smartMenusOnce(String familyId) async {
+    final rows = await sb
+        .from('smart_menus')
+        .select('*')
+        .eq('family_id', familyId)
+        .order('name');
+    final menus = <SmartMenuModel>[];
+    for (final raw in rows as List) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final ingredientsRows = await sb
+          .from('smart_menu_ingredients')
+          .select('*')
+          .eq('smart_menu_id', row['id'])
+          .order('sort_order');
+      row['smart_menu_ingredients'] = ingredientsRows;
+      menus.add(SmartMenuModel.fromMap(row));
+    }
+    return menus;
+  }
+
+  Future<void> upsertSmartMenu({
+    String? id,
+    required String familyId,
+    required String name,
+    required String mealType,
+    String? notes,
+    required List<String> ingredients,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) return;
+    final menuId = id ?? _uuid.v4();
+    await sb.from('smart_menus').upsert({
+      'id': menuId,
+      'family_id': familyId,
+      'name': cleanName,
+      'meal_type': mealType,
+      'notes': notes?.trim(),
+      'created_by': sb.auth.currentUser!.id,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'id');
+
+    await sb.from('smart_menu_ingredients').delete().eq('smart_menu_id', menuId);
+    final cleanIngredients = ingredients
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (cleanIngredients.isEmpty) return;
+    await sb.from('smart_menu_ingredients').insert([
+      for (var i = 0; i < cleanIngredients.length; i++)
+        {
+          'id': _uuid.v4(),
+          'smart_menu_id': menuId,
+          'name': cleanIngredients[i],
+          'sort_order': i,
+        }
+    ]);
+  }
+
+  Future<void> deleteSmartMenu(String id) async {
+    await sb.from('smart_daily_menus').delete().eq('smart_menu_id', id);
+    await sb.from('smart_menus').delete().eq('id', id);
+  }
+
+  Stream<List<SmartDailyMenuModel>> smartDailyMenus(String familyId) {
+    return sb
+        .from('smart_daily_menus')
+        .stream(primaryKey: ['id'])
+        .eq('family_id', familyId)
+        .map((rows) async {
+          final menus = await smartMenusOnce(familyId);
+          final byId = {for (final menu in menus) menu.id: menu};
+          final items = rows.map((row) {
+            final map = Map<String, dynamic>.from(row);
+            final menuId = (map['smart_menu_id'] ?? '').toString();
+            if (byId[menuId] != null) {
+              map['smart_menus'] = {
+                'id': byId[menuId]!.id,
+                'family_id': byId[menuId]!.familyId,
+                'name': byId[menuId]!.name,
+                'meal_type': byId[menuId]!.mealType,
+                'notes': byId[menuId]!.notes,
+                'smart_menu_ingredients': byId[menuId]!.ingredients.map((e) => {
+                  'id': e.id,
+                  'smart_menu_id': e.smartMenuId,
+                  'name': e.name,
+                  'quantity': e.quantity,
+                  'unit': e.unit,
+                  'sort_order': e.sortOrder,
+                }).toList(),
+              };
+            }
+            return SmartDailyMenuModel.fromMap(map);
+          }).toList();
+          items.sort((a, b) => a.menuDate.compareTo(b.menuDate));
+          return items;
+        })
+        .asyncMap((future) => future);
+  }
+
+  Future<void> assignSmartDailyMenu({
+    required String familyId,
+    required DateTime day,
+    required String mealSlot,
+    required String smartMenuId,
+  }) async {
+    final dayKey = DateTime.utc(day.year, day.month, day.day).toIso8601String().split('T').first;
+    await sb.from('smart_daily_menus').upsert({
+      'id': _uuid.v4(),
+      'family_id': familyId,
+      'menu_date': dayKey,
+      'meal_slot': mealSlot,
+      'smart_menu_id': smartMenuId,
+      'shopping_confirmed': false,
+      'created_by': sb.auth.currentUser!.id,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'family_id,menu_date,meal_slot');
+  }
+
+  Future<void> confirmSmartDailyShopping({
+    required String familyId,
+    required DateTime day,
+    required List<String> selectedIngredients,
+  }) async {
+    final selected = selectedIngredients
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (selected.isNotEmpty) {
+      List<dynamic> existingRows;
+      try {
+        existingRows = await sb
+            .from('shopping_items')
+            .select('name,text,done,is_done')
+            .eq('family_id', familyId);
+      } catch (_) {
+        existingRows = await sb
+            .from('shopping_items')
+            .select('name,done')
+            .eq('family_id', familyId);
+      }
+      final existingPending = <String>{};
+      for (final raw in existingRows) {
+        final row = Map<String, dynamic>.from(raw as Map);
+        final done = (row['done'] ?? row['is_done'] ?? false) as bool;
+        if (!done) {
+          final name = (row['name'] ?? row['text'] ?? '').toString().trim().toLowerCase();
+          if (name.isNotEmpty) existingPending.add(name);
+        }
+      }
+
+      for (final ingredient in selected) {
+        if (!existingPending.contains(ingredient.toLowerCase())) {
+          await addShopping(
+            familyId: familyId,
+            text: ingredient,
+            category: 'Menús con compra',
+            listName: 'principal',
+          );
+          existingPending.add(ingredient.toLowerCase());
+        }
+      }
+    }
+
+    final dayKey = DateTime.utc(day.year, day.month, day.day).toIso8601String().split('T').first;
+    await sb
+        .from('smart_daily_menus')
+        .update({
+          'shopping_confirmed': true,
+          'shopping_confirmed_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('family_id', familyId)
+        .eq('menu_date', dayKey);
+  }
+
 }

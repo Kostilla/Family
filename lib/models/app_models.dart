@@ -1,3 +1,39 @@
+class UserProfileModel {
+  final String id;
+  final String email;
+  final String displayName;
+  final String? avatarPath;
+
+  UserProfileModel({
+    required this.id,
+    required this.email,
+    required this.displayName,
+    required this.avatarPath,
+  });
+
+  factory UserProfileModel.fromMap(Map<String, dynamic> map) {
+    final email = (map['email'] ?? '').toString();
+    final fallback = email.contains('@') ? email.split('@').first : 'Usuario';
+    final name = (map['display_name'] ?? map['name'] ?? '').toString().trim();
+    return UserProfileModel(
+      id: (map['id'] ?? '').toString(),
+      email: email,
+      displayName: name.isEmpty ? fallback : name,
+      avatarPath: (map['avatar_path'] ?? map['avatar_url'])?.toString(),
+    );
+  }
+
+  String get initials {
+    final parts = displayName.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) {
+      final value = parts.first;
+      return value.substring(0, value.length < 2 ? value.length : 2).toUpperCase();
+    }
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+}
+
 class FamilySummary {
   final String id;
   final String name;
@@ -106,6 +142,7 @@ class ChatMessageModel {
   final String text;
   final String createdBy;
   final String authorName;
+  final String? authorAvatarPath;
   final DateTime createdAt;
 
   ChatMessageModel({
@@ -114,6 +151,7 @@ class ChatMessageModel {
     required this.text,
     required this.createdBy,
     required this.authorName,
+    required this.authorAvatarPath,
     required this.createdAt,
   });
 
@@ -123,6 +161,7 @@ class ChatMessageModel {
         text: (map['text'] ?? map['content'] ?? '').toString(),
         createdBy: (map['created_by'] ?? map['author_id'] ?? '').toString(),
         authorName: (map['author_name'] ?? map['display_name'] ?? 'Usuario').toString(),
+        authorAvatarPath: (map['author_avatar_path'] ?? map['avatar_path'] ?? map['avatar_url'])?.toString(),
         createdAt: DateTime.tryParse((map['created_at'] ?? DateTime.now().toIso8601String()).toString()) ?? DateTime.now(),
       );
 }

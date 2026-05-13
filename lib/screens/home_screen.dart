@@ -210,6 +210,22 @@ class _QuickActions extends ConsumerWidget {
     }).toList();
   }
 
+
+  String _buildAiSummary(int shopping, int tasks, List<String> meals, List<EventModel> events) {
+    final todayEvents = events.where((e) => _sameDay(e.startAt, DateTime.now())).length;
+    return 'Hoy: $shopping compra · $tasks tareas · $todayEvents eventos';
+  }
+
+  List<String> _buildAiSuggestions(int shopping, int tasks, List<String> meals, List<EventModel> events) {
+    final suggestions = <String>[];
+    if (shopping > 5) suggestions.add('🛒 Compra bastante cargada');
+    if (tasks > 3) suggestions.add('✅ Muchas tareas pendientes');
+    if (meals.isEmpty) suggestions.add('🍽 Sin menú configurado hoy');
+    if (events.isEmpty) suggestions.add('📅 Día tranquilo sin eventos');
+    if (suggestions.isEmpty) suggestions.add('✨ Todo parece bajo control');
+    return suggestions.take(2).toList();
+  }
+
   Color _parseColor(String value) {
     final clean = value.replaceAll('#', '').trim();
     final hex = clean.length == 6 ? 'FF$clean' : clean;
@@ -261,6 +277,14 @@ class _QuickActions extends ConsumerWidget {
                         );
 
                         final tiles = <Widget>[
+
+                          _ActionTile(
+                              icon: Icons.auto_awesome_outlined,
+                              title: 'IA familiar',
+                              subtitle: _buildAiSummary(pendingShopping, pendingTasks, mealLines, events),
+                              detailLines: _buildAiSuggestions(pendingShopping, pendingTasks, mealLines, events),
+                              onTap: () {},
+                            ),
                           if (modules.isEnabled('shopping'))
                             _ActionTile(
                               icon: Icons.shopping_cart_outlined,
@@ -459,46 +483,79 @@ class _ChatCard extends ConsumerWidget {
                             itemBuilder: (context, index) {
                               final msg = msgs[index];
                               final isMe = msg.createdBy == currentUserId;
-                              return Align(
-                                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 460),
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(vertical: 4),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: isMe
-                                          ? Theme.of(context).colorScheme.primaryContainer
-                                          : Theme.of(context).colorScheme.surfaceContainerHighest,
-                                      borderRadius: BorderRadius.only(
-                                        topLeft: const Radius.circular(18),
-                                        topRight: const Radius.circular(18),
-                                        bottomLeft: Radius.circular(isMe ? 18 : 4),
-                                        bottomRight: Radius.circular(isMe ? 4 : 18),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              isMe ? 'Tú' : msg.authorName,
-                                              style: Theme.of(context).textTheme.labelMedium,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              formatTime(msg.createdAt),
-                                              style: Theme.of(context).textTheme.labelSmall,
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        SelectableText(msg.text),
-                                      ],
+                              final initials = msg.authorName.trim().isEmpty
+                                  ? 'U'
+                                  : msg.authorName
+                                      .trim()
+                                      .split(RegExp(r'\s+'))
+                                      .map((e) => e.isEmpty ? '' : e[0])
+                                      .take(2)
+                                      .join()
+                                      .toUpperCase();
+                              final bubble = ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 460),
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isMe
+                                        ? Theme.of(context).colorScheme.primaryContainer
+                                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(18),
+                                      topRight: const Radius.circular(18),
+                                      bottomLeft: Radius.circular(isMe ? 18 : 4),
+                                      bottomRight: Radius.circular(isMe ? 4 : 18),
                                     ),
                                   ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            isMe ? 'Tú · ${msg.authorName}' : msg.authorName,
+                                            style: Theme.of(context).textTheme.labelMedium,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            formatTime(msg.createdAt),
+                                            style: Theme.of(context).textTheme.labelSmall,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(msg.text),
+                                    ],
+                                  ),
+                                ),
+                              );
+
+                              return Align(
+                                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: isMe
+                                      ? [
+                                          bubble,
+                                          const SizedBox(width: 8),
+                                          UserAvatar(
+                                            initials: initials,
+                                            avatarPath: msg.authorAvatarPath,
+                                            radius: 16,
+                                          ),
+                                        ]
+                                      : [
+                                          UserAvatar(
+                                            initials: initials,
+                                            avatarPath: msg.authorAvatarPath,
+                                            radius: 16,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          bubble,
+                                        ],
                                 ),
                               );
                             },

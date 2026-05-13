@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 class PremiumBackground extends StatelessWidget {
@@ -277,6 +278,65 @@ class RequireFamily extends StatelessWidget {
       message: 'Así la app puede separar chat, compra, tareas, menús y calendario de cada familia.',
       buttonText: 'Gestionar familias',
       onPressed: () => context.go('/family-setup'),
+    );
+  }
+}
+
+class UserAvatar extends StatelessWidget {
+  const UserAvatar({
+    super.key,
+    required this.initials,
+    this.avatarPath,
+    this.radius = 18,
+  });
+
+  final String initials;
+  final String? avatarPath;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cleanPath = avatarPath?.trim();
+    if (cleanPath == null || cleanPath.isEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: scheme.primaryContainer,
+        child: Text(
+          initials.isEmpty ? 'U' : initials,
+          style: TextStyle(
+            color: scheme.onPrimaryContainer,
+            fontSize: radius * .72,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
+    return FutureBuilder<String>(
+      future: Supabase.instance.client.storage.from('family-files').createSignedUrl(cleanPath, 3600),
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (url == null || url.isEmpty) {
+          return CircleAvatar(
+            radius: radius,
+            backgroundColor: scheme.primaryContainer,
+            child: Text(
+              initials.isEmpty ? 'U' : initials,
+              style: TextStyle(
+                color: scheme.onPrimaryContainer,
+                fontSize: radius * .72,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          );
+        }
+        return CircleAvatar(
+          radius: radius,
+          backgroundColor: scheme.primaryContainer,
+          backgroundImage: NetworkImage(url),
+        );
+      },
     );
   }
 }

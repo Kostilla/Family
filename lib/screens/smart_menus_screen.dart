@@ -17,16 +17,42 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
   String mealSlot = 'lunch';
   String? selectedMenuId;
 
+  DateTime _dateOnly(DateTime day) => DateTime(day.year, day.month, day.day);
+
   String _dayLabel(DateTime day) {
-    final d = DateTime(day.year, day.month, day.day);
-    final today = DateTime.now();
-    final todayOnly = DateTime(today.year, today.month, today.day);
-    if (d == todayOnly) return 'Hoy';
-    if (d == todayOnly.add(const Duration(days: 1))) return 'Mañana';
+    final d = _dateOnly(day);
+    final today = _dateOnly(DateTime.now());
+    if (d == today) return 'Hoy';
+    if (d == today.add(const Duration(days: 1))) return 'Mañana';
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
-  DateTime _dateOnly(DateTime day) => DateTime(day.year, day.month, day.day);
+  String _fullDayLabel(DateTime day) {
+    const names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    return '${names[day.weekday - 1]} ${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}';
+  }
+
+  String _slotLabel(String slot) {
+    switch (slot) {
+      case 'lunch':
+        return 'Comida';
+      case 'dinner':
+        return 'Cena';
+      default:
+        return 'Otro';
+    }
+  }
+
+  int _slotRank(String slot) {
+    switch (slot) {
+      case 'lunch':
+        return 0;
+      case 'dinner':
+        return 1;
+      default:
+        return 2;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,93 +69,68 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
           stream: repo.smartMenus(familyId),
           builder: (context, menusSnapshot) {
             final menus = menusSnapshot.data ?? const <SmartMenuModel>[];
-            final validSelected = menus.any((menu) => menu.id == selectedMenuId);
-            if (!validSelected && menus.isNotEmpty) selectedMenuId = menus.first.id;
+            final selectedStillExists = menus.any((menu) => menu.id == selectedMenuId);
+            if (!selectedStillExists && menus.isNotEmpty) selectedMenuId = menus.first.id;
 
             return StreamBuilder<List<SmartDailyMenuModel>>(
               stream: repo.smartDailyMenus(familyId),
               builder: (context, dailySnapshot) {
                 final dailyMenus = dailySnapshot.data ?? const <SmartDailyMenuModel>[];
                 final pendingDays = _pendingDays(dailyMenus);
+                final selectedDayItems = _itemsForDay(dailyMenus, selectedDay);
+                final weekDays = List.generate(7, (i) => _startOfWeek(selectedDay).add(Duration(days: i)));
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  children: [
-                    ProHeader(
-                      icon: Icons.restaurant_menu_rounded,
-                      title: 'Menús con compra',
-                      subtitle: 'Recetas predeterminadas, planificación y compra automática.',
-                      action: IconButton.filledTonal(
-                        tooltip: 'Crear menú predeterminado',
-                        onPressed: () => _openMenuEditor(familyId: familyId),
-                        icon: const Icon(Icons.add_rounded),
+                return DefaultTabController(
+                  length: 3,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: ProHeader(
+                          icon: Icons.restaurant_menu_rounded,
+                          title: 'Menús con compra',
+                          subtitle: 'Planifica por día, revisa la semana y gestiona tus plantillas sin saturar la pantalla.',
+                          action: IconButton.filledTonal(
+                            tooltip: 'Crear plantilla',
+                            onPressed: () => _openMenuEditor(familyId: familyId),
+                            icon: const Icon(Icons.add_rounded),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SectionCard(
-                      icon: Icons.bookmark_add_rounded,
-                      title: 'Planificar día',
-                      subtitle: 'Elige un menú predeterminado para comida o cena.',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final picked = await showDatePicker(
-                                      context: context,
-                                      initialDate: selectedDay,
-                                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                                      lastDate: DateTime.now().add(const Duration(days: 730)),
-                                    );
-                                    if (picked != null) setState(() => selectedDay = picked);
-                                  },
-                                  icon: const Icon(Icons.calendar_month_rounded),
-                                  label: Text(_dayLabel(selectedDay)),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: mealSlot,
-                                  decoration: const InputDecoration(labelText: 'Momento'),
-                                  items: const [
-                                    DropdownMenuItem(value: 'lunch', child: Text('Comida')),
-                                    DropdownMenuItem(value: 'dinner', child: Text('Cena')),
-                                    DropdownMenuItem(value: 'other', child: Text('Otro')),
-                                  ],
-                                  onChanged: (value) => setState(() => mealSlot = value ?? 'lunch'),
-                                ),
-                              ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: GlassPanel(
+                          padding: const EdgeInsets.all(6),
+                          radius: 22,
+                          child: const TabBar(
+                            tabs: [
+                              Tab(icon: Icon(Icons.today_rounded), text: 'Día'),
+                              Tab(icon: Icon(Icons.view_week_rounded), text: 'Semana'),
+                              Tab(icon: Icon(Icons.bookmark_rounded), text: 'Plantillas'),
                             ],
                           ),
-                          const SizedBox(height: 10),
-                          if (menus.isEmpty)
-                            EmptyState(
-                              icon: Icons.restaurant_menu_outlined,
-                              title: 'Aún no tienes menús predeterminados',
-                              message: 'Crea uno con sus ingredientes para poder añadirlo a tus días.',
-                              buttonText: 'Crear menú predeterminado',
-                              onPressed: () => _openMenuEditor(familyId: familyId),
-                            )
-                          else ...[
-                            DropdownButtonFormField<String>(
-                              value: selectedMenuId,
-                              decoration: const InputDecoration(labelText: 'Menú predeterminado'),
-                              items: [
-                                for (final menu in menus)
-                                  DropdownMenuItem(
-                                    value: menu.id,
-                                    child: Text(menu.name),
-                                  ),
-                              ],
-                              onChanged: (value) => setState(() => selectedMenuId = value),
-                            ),
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: selectedMenuId == null
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _DayTab(
+                              familyId: familyId,
+                              selectedDay: selectedDay,
+                              menus: menus,
+                              dailyItems: selectedDayItems,
+                              mealSlot: mealSlot,
+                              selectedMenuId: selectedMenuId,
+                              dayLabel: _dayLabel,
+                              slotLabel: _slotLabel,
+                              slotRank: _slotRank,
+                              onPickDay: _pickSelectedDay,
+                              onMealSlotChanged: (value) => setState(() => mealSlot = value),
+                              onMenuChanged: (value) => setState(() => selectedMenuId = value),
+                              onCreateTemplate: () => _openMenuEditor(familyId: familyId),
+                              onAssign: selectedMenuId == null
                                   ? null
                                   : () async {
                                       await repo.assignSmartDailyMenu(
@@ -140,78 +141,40 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                                       );
                                       if (mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Menú añadido al día. Queda pendiente de confirmar compra.')),
+                                          const SnackBar(content: Text('Menú asignado. Queda pendiente si no has confirmado la compra.')),
                                         );
                                       }
                                     },
-                              icon: const Icon(Icons.add_task_rounded),
-                              label: const Text('Añadir al día'),
+                              onConfirm: selectedDayItems.any((item) => !item.shoppingConfirmed)
+                                  ? () => _confirmDay(familyId, selectedDay, dailyMenus)
+                                  : null,
+                            ),
+                            _WeekTab(
+                              days: weekDays,
+                              dailyMenus: dailyMenus,
+                              pendingDays: pendingDays,
+                              fullDayLabel: _fullDayLabel,
+                              slotLabel: _slotLabel,
+                              slotRank: _slotRank,
+                              itemsForDay: _itemsForDay,
+                              onSelectDay: (day) {
+                                setState(() => selectedDay = day);
+                                DefaultTabController.of(context).animateTo(0);
+                              },
+                              onConfirmDay: (day) => _confirmDay(familyId, day, dailyMenus),
+                            ),
+                            _TemplatesTab(
+                              menus: menus,
+                              mealTypeLabel: _slotLabel,
+                              onCreate: () => _openMenuEditor(familyId: familyId),
+                              onEdit: (menu) => _openMenuEditor(familyId: familyId, menu: menu),
+                              onDelete: _deleteMenu,
                             ),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SectionCard(
-                      icon: Icons.fact_check_rounded,
-                      title: 'Pendientes de confirmar compra',
-                      subtitle: 'Cuando confirmes un día, desaparecerá de esta lista.',
-                      child: pendingDays.isEmpty
-                          ? const EmptyState(
-                              icon: Icons.check_circle_outline_rounded,
-                              title: 'No hay días pendientes',
-                              message: 'Los días confirmados no se muestran aquí.',
-                            )
-                          : Column(
-                              children: [
-                                for (final day in pendingDays)
-                                  _PendingDayTile(
-                                    day: day,
-                                    items: dailyMenus.where((item) => _dateOnly(item.menuDate) == day && !item.shoppingConfirmed).toList(),
-                                    onConfirm: () => _confirmDay(familyId, day, dailyMenus),
-                                  ),
-                              ],
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    SectionCard(
-                      icon: Icons.restaurant_rounded,
-                      title: 'Menús predeterminados',
-                      subtitle: 'Crea, edita o elimina tus recetas base.',
-                      child: menus.isEmpty
-                          ? EmptyState(
-                              icon: Icons.restaurant_menu_outlined,
-                              title: 'Sin menús guardados',
-                              message: 'Guarda platos frecuentes y luego úsalos en tus menús diarios.',
-                              buttonText: 'Crear menú',
-                              onPressed: () => _openMenuEditor(familyId: familyId),
-                            )
-                          : Column(
-                              children: [
-                                for (final menu in menus)
-                                  GlassPanel(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                    child: ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      leading: const Icon(Icons.restaurant_menu_rounded),
-                                      title: Text(menu.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                      subtitle: Text('${_mealTypeLabel(menu.mealType)} · ${menu.ingredients.length} ingrediente(s)'),
-                                      trailing: PopupMenuButton<String>(
-                                        onSelected: (value) {
-                                          if (value == 'edit') _openMenuEditor(familyId: familyId, menu: menu);
-                                          if (value == 'delete') _deleteMenu(menu);
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(value: 'edit', child: Text('Editar')),
-                                          PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             );
@@ -221,6 +184,27 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
     );
   }
 
+  Future<void> _pickSelectedDay() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDay,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (picked != null) setState(() => selectedDay = picked);
+  }
+
+  DateTime _startOfWeek(DateTime day) {
+    final d = _dateOnly(day);
+    return d.subtract(Duration(days: d.weekday - 1));
+  }
+
+  List<SmartDailyMenuModel> _itemsForDay(List<SmartDailyMenuModel> dailyMenus, DateTime day) {
+    final items = dailyMenus.where((item) => _dateOnly(item.menuDate) == _dateOnly(day)).toList();
+    items.sort((a, b) => _slotRank(a.mealSlot).compareTo(_slotRank(b.mealSlot)));
+    return items;
+  }
+
   List<DateTime> _pendingDays(List<SmartDailyMenuModel> dailyMenus) {
     final days = <DateTime>{};
     for (final item in dailyMenus) {
@@ -228,17 +212,6 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
     }
     final sorted = days.toList()..sort();
     return sorted;
-  }
-
-  String _mealTypeLabel(String type) {
-    switch (type) {
-      case 'lunch':
-        return 'Comida';
-      case 'dinner':
-        return 'Cena';
-      default:
-        return 'Otro';
-    }
   }
 
   Future<void> _openMenuEditor({required String familyId, SmartMenuModel? menu}) async {
@@ -273,7 +246,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(menu == null ? 'Crear menú predeterminado' : 'Editar menú', style: Theme.of(context).textTheme.titleLarge),
+                          child: Text(menu == null ? 'Crear plantilla de menú' : 'Editar plantilla', style: Theme.of(context).textTheme.titleLarge),
                         ),
                         IconButton(
                           onPressed: () => Navigator.of(modalContext).pop(false),
@@ -281,11 +254,8 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: 'Nombre del menú'),
-                    ),
+                    const SizedBox(height: 12),
+                    TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nombre del menú')),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       value: type,
@@ -298,11 +268,8 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                       onChanged: (value) => setModalState(() => type = value ?? 'lunch'),
                     ),
                     const SizedBox(height: 10),
-                    TextField(
-                      controller: notesCtrl,
-                      decoration: const InputDecoration(labelText: 'Notas'),
-                    ),
-                    const SizedBox(height: 16),
+                    TextField(controller: notesCtrl, decoration: const InputDecoration(labelText: 'Notas')),
+                    const SizedBox(height: 18),
                     Text('Ingredientes', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     for (var i = 0; i < ingredientCtrls.length; i++)
@@ -317,9 +284,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                               ),
                             ),
                             IconButton(
-                              onPressed: ingredientCtrls.length == 1
-                                  ? null
-                                  : () => setModalState(() => ingredientCtrls.removeAt(i)),
+                              onPressed: ingredientCtrls.length == 1 ? null : () => setModalState(() => ingredientCtrls.removeAt(i)),
                               icon: const Icon(Icons.remove_circle_outline),
                             ),
                           ],
@@ -335,8 +300,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                       width: double.infinity,
                       child: FilledButton.icon(
                         onPressed: () async {
-                          final repo = ref.read(repositoriesProvider);
-                          await repo.upsertSmartMenu(
+                          await ref.read(repositoriesProvider).upsertSmartMenu(
                             id: menu?.id,
                             familyId: familyId,
                             name: nameCtrl.text,
@@ -347,7 +311,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
                           if (mounted) Navigator.of(modalContext).pop(true);
                         },
                         icon: const Icon(Icons.save_outlined),
-                        label: Text(menu == null ? 'Crear menú' : 'Guardar cambios'),
+                        label: Text(menu == null ? 'Crear plantilla' : 'Guardar cambios'),
                       ),
                     ),
                   ],
@@ -366,7 +330,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
     notesCtrl.dispose();
 
     if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Menú guardado')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Plantilla guardada')));
     }
   }
 
@@ -374,8 +338,8 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Eliminar menú'),
-        content: Text('¿Quieres eliminar "${menu.name}"?'),
+        title: const Text('Eliminar plantilla'),
+        content: Text('¿Quieres eliminar "${menu.name}"? También se quitará de los días donde esté asignada.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancelar')),
           FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Eliminar')),
@@ -386,7 +350,7 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
   }
 
   Future<void> _confirmDay(String familyId, DateTime day, List<SmartDailyMenuModel> dailyMenus) async {
-    final dayItems = dailyMenus.where((item) => _dateOnly(item.menuDate) == day && !item.shoppingConfirmed).toList();
+    final dayItems = dailyMenus.where((item) => _dateOnly(item.menuDate) == _dateOnly(day) && !item.shoppingConfirmed).toList();
     final ingredientsByKey = <String, String>{};
     for (final item in dayItems) {
       for (final ingredient in item.menu?.ingredients ?? const <SmartMenuIngredientModel>[]) {
@@ -475,57 +439,404 @@ class _SmartMenusScreenState extends ConsumerState<SmartMenusScreen> {
   }
 }
 
-class _PendingDayTile extends StatelessWidget {
-  const _PendingDayTile({
+class _DayTab extends StatelessWidget {
+  const _DayTab({
+    required this.familyId,
+    required this.selectedDay,
+    required this.menus,
+    required this.dailyItems,
+    required this.mealSlot,
+    required this.selectedMenuId,
+    required this.dayLabel,
+    required this.slotLabel,
+    required this.slotRank,
+    required this.onPickDay,
+    required this.onMealSlotChanged,
+    required this.onMenuChanged,
+    required this.onCreateTemplate,
+    required this.onAssign,
+    required this.onConfirm,
+  });
+
+  final String familyId;
+  final DateTime selectedDay;
+  final List<SmartMenuModel> menus;
+  final List<SmartDailyMenuModel> dailyItems;
+  final String mealSlot;
+  final String? selectedMenuId;
+  final String Function(DateTime) dayLabel;
+  final String Function(String) slotLabel;
+  final int Function(String) slotRank;
+  final VoidCallback onPickDay;
+  final ValueChanged<String> onMealSlotChanged;
+  final ValueChanged<String?> onMenuChanged;
+  final VoidCallback onCreateTemplate;
+  final VoidCallback? onAssign;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final sortedItems = [...dailyItems]..sort((a, b) => slotRank(a.mealSlot).compareTo(slotRank(b.mealSlot)));
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        SectionCard(
+          icon: Icons.today_rounded,
+          title: 'Día',
+          subtitle: 'Consulta y asigna menús para cualquier día.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onPickDay,
+                icon: const Icon(Icons.event_rounded),
+                label: Text(dayLabel(selectedDay)),
+              ),
+              const SizedBox(height: 12),
+              if (sortedItems.isEmpty)
+                const EmptyState(
+                  icon: Icons.no_meals_rounded,
+                  title: 'No hay menús asignados',
+                  message: 'Asigna comida o cena abajo para este día.',
+                )
+              else
+                GlassPanel(
+                  padding: const EdgeInsets.all(14),
+                  radius: 22,
+                  child: Column(
+                    children: [
+                      for (final item in sortedItems)
+                        _CompactAssignedMenuRow(slot: slotLabel(item.mealSlot), item: item),
+                      if (onConfirm != null) ...[
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonalIcon(
+                            onPressed: onConfirm,
+                            icon: const Icon(Icons.check_rounded),
+                            label: const Text('Confirmar ingredientes para compra'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SectionCard(
+          icon: Icons.add_task_rounded,
+          title: 'Asignar menú',
+          subtitle: 'Elige momento y plantilla. La compra queda pendiente hasta confirmar.',
+          child: menus.isEmpty
+              ? EmptyState(
+                  icon: Icons.restaurant_menu_outlined,
+                  title: 'Aún no tienes plantillas',
+                  message: 'Crea menús predeterminados con ingredientes para usarlos aquí.',
+                  buttonText: 'Crear plantilla',
+                  onPressed: onCreateTemplate,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: mealSlot,
+                      decoration: const InputDecoration(labelText: 'Momento'),
+                      items: const [
+                        DropdownMenuItem(value: 'lunch', child: Text('Comida')),
+                        DropdownMenuItem(value: 'dinner', child: Text('Cena')),
+                        DropdownMenuItem(value: 'other', child: Text('Otro')),
+                      ],
+                      onChanged: (value) => onMealSlotChanged(value ?? 'lunch'),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: selectedMenuId,
+                      decoration: const InputDecoration(labelText: 'Plantilla'),
+                      items: [
+                        for (final menu in menus) DropdownMenuItem(value: menu.id, child: Text(menu.name)),
+                      ],
+                      onChanged: onMenuChanged,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: onAssign,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Asignar al día'),
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekTab extends StatelessWidget {
+  const _WeekTab({
+    required this.days,
+    required this.dailyMenus,
+    required this.pendingDays,
+    required this.fullDayLabel,
+    required this.slotLabel,
+    required this.slotRank,
+    required this.itemsForDay,
+    required this.onSelectDay,
+    required this.onConfirmDay,
+  });
+
+  final List<DateTime> days;
+  final List<SmartDailyMenuModel> dailyMenus;
+  final List<DateTime> pendingDays;
+  final String Function(DateTime) fullDayLabel;
+  final String Function(String) slotLabel;
+  final int Function(String) slotRank;
+  final List<SmartDailyMenuModel> Function(List<SmartDailyMenuModel>, DateTime) itemsForDay;
+  final ValueChanged<DateTime> onSelectDay;
+  final ValueChanged<DateTime> onConfirmDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingSet = pendingDays.map((d) => DateTime(d.year, d.month, d.day)).toSet();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        SectionCard(
+          icon: Icons.view_week_rounded,
+          title: 'Plan semanal',
+          subtitle: 'Tarjetas compactas. Toca un día para editarlo en la pestaña Día.',
+          child: Column(
+            children: [
+              for (final day in days)
+                _WeekDayTile(
+                  day: day,
+                  title: fullDayLabel(day),
+                  items: itemsForDay(dailyMenus, day),
+                  hasPending: pendingSet.contains(DateTime(day.year, day.month, day.day)),
+                  slotLabel: slotLabel,
+                  slotRank: slotRank,
+                  onTap: () => onSelectDay(day),
+                  onConfirm: pendingSet.contains(DateTime(day.year, day.month, day.day)) ? () => onConfirmDay(day) : null,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TemplatesTab extends StatelessWidget {
+  const _TemplatesTab({
+    required this.menus,
+    required this.mealTypeLabel,
+    required this.onCreate,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final List<SmartMenuModel> menus;
+  final String Function(String) mealTypeLabel;
+  final VoidCallback onCreate;
+  final ValueChanged<SmartMenuModel> onEdit;
+  final ValueChanged<SmartMenuModel> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        SectionCard(
+          icon: Icons.bookmark_rounded,
+          title: 'Plantillas',
+          subtitle: 'Guarda platos frecuentes con sus ingredientes.',
+          trailing: FilledButton.tonalIcon(
+            onPressed: onCreate,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Crear'),
+          ),
+          child: menus.isEmpty
+              ? EmptyState(
+                  icon: Icons.restaurant_menu_outlined,
+                  title: 'Sin plantillas',
+                  message: 'Crea menús frecuentes y luego asígnalos a cualquier día.',
+                  buttonText: 'Crear plantilla',
+                  onPressed: onCreate,
+                )
+              : Column(
+                  children: [
+                    for (final menu in menus)
+                      _PresetMenuTile(
+                        menu: menu,
+                        mealTypeLabel: mealTypeLabel,
+                        onEdit: () => onEdit(menu),
+                        onDelete: () => onDelete(menu),
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekDayTile extends StatelessWidget {
+  const _WeekDayTile({
     required this.day,
+    required this.title,
     required this.items,
+    required this.hasPending,
+    required this.slotLabel,
+    required this.slotRank,
+    required this.onTap,
     required this.onConfirm,
   });
 
   final DateTime day;
+  final String title;
   final List<SmartDailyMenuModel> items;
-  final VoidCallback onConfirm;
+  final bool hasPending;
+  final String Function(String) slotLabel;
+  final int Function(String) slotRank;
+  final VoidCallback onTap;
+  final VoidCallback? onConfirm;
 
-  String _dayLabel(DateTime day) => '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
-
-  String _slotLabel(String slot) {
-    switch (slot) {
-      case 'lunch':
-        return 'Comida';
-      case 'dinner':
-        return 'Cena';
-      default:
-        return 'Otro';
-    }
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...items]..sort((a, b) => slotRank(a.mealSlot).compareTo(slotRank(b.mealSlot)));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassPanel(
+        padding: EdgeInsets.zero,
+        radius: 22,
+        child: ListTile(
+          onTap: onTap,
+          leading: Icon(hasPending ? Icons.pending_actions_rounded : Icons.event_available_rounded),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: sorted.isEmpty
+              ? const Text('Sin menú asignado')
+              : Text(sorted.map((item) => '${slotLabel(item.mealSlot)}: ${item.menu?.name ?? 'Menú'}').join(' · ')),
+          trailing: onConfirm == null
+              ? const Icon(Icons.chevron_right_rounded)
+              : FilledButton.tonal(
+                  onPressed: onConfirm,
+                  child: const Text('Confirmar'),
+                ),
+        ),
+      ),
+    );
   }
+}
+
+class _CompactAssignedMenuRow extends StatelessWidget {
+  const _CompactAssignedMenuRow({required this.slot, required this.item});
+
+  final String slot;
+  final SmartDailyMenuModel item;
+
+  @override
+  Widget build(BuildContext context) {
+    final ingredients = item.menu?.ingredients ?? const <SmartMenuIngredientModel>[];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 86,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              slot,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.primary),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.menu?.name ?? 'Menú', style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(
+                  item.shoppingConfirmed ? 'Compra confirmada' : 'Pendiente de compra',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: item.shoppingConfirmed ? Colors.green.shade700 : Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                if (ingredients.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    ingredients.map((e) => e.displayName).join(' · '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PresetMenuTile extends StatelessWidget {
+  const _PresetMenuTile({required this.menu, required this.mealTypeLabel, required this.onEdit, required this.onDelete});
+
+  final SmartMenuModel menu;
+  final String Function(String) mealTypeLabel;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: GlassPanel(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.zero,
+        radius: 22,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          leading: const Icon(Icons.restaurant_menu_rounded),
+          title: Text(menu.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text('${mealTypeLabel(menu.mealType)} · ${menu.ingredients.length} ingrediente(s)'),
+          trailing: PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'edit') onEdit();
+              if (value == 'delete') onDelete();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Editar')),
+              PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+            ],
+          ),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(_dayLabel(day), style: Theme.of(context).textTheme.titleMedium),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: onConfirm,
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('Confirmar'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('${_slotLabel(item.mealSlot)}: ${item.menu?.name ?? 'Menú'}'),
+            const Divider(height: 14),
+            if (menu.ingredients.isEmpty)
+              Text('Sin ingredientes', style: Theme.of(context).textTheme.bodySmall)
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final ingredient in menu.ingredients)
+                    Chip(label: Text(ingredient.displayName), visualDensity: VisualDensity.compact),
+                ],
               ),
+            if ((menu.notes ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text((menu.notes ?? '').trim(), style: Theme.of(context).textTheme.bodySmall),
+            ],
           ],
         ),
       ),

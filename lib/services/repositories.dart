@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:mime/mime.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/supabase.dart';
@@ -9,6 +10,133 @@ import 'storage_service.dart';
 class Repositories {
   final _uuid = const Uuid();
   final _storage = StorageService();
+
+  Future<UserProfileModel?> currentProfile() async {
+    final user = sb.auth.currentUser;
+    if (user == null) return null;
+    Map<String, dynamic>? row;
+    try {
+      row = await sb
+          .from('profiles')
+          .select('id,email,display_name,avatar_path,avatar_url,current_family_id')
+          .eq('id', user.id)
+          .maybeSingle();
+    } catch (_) {
+      final fallbackRow = await sb
+          .from('profiles')
+          .select('id,email,display_name,current_family_id')
+          .eq('id', user.id)
+          .maybeSingle();
+      row = fallbackRow == null ? null : Map<String, dynamic>.from(fallbackRow);
+    }
+    if (row == null) {
+      return UserProfileModel(
+        id: user.id,
+        email: user.email ?? '',
+        displayName: user.email?.split('@').first ?? 'Usuario',
+        avatarPath: null,
+      );
+    }
+    return UserProfileModel.fromMap(Map<String, dynamic>.from(row));
+  }
+
+  Future<List<UserProfileModel>> familyProfiles(String familyId) async {
+    final memberRows = await sb
+        .from('family_members')
+        .select('user_id')
+        .eq('family_id', familyId);
+    final ids = (memberRows as List)
+        .map((e) => (e as Map)['user_id']?.toString())
+        .whereType<String>()
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return const [];
+
+    List<dynamic> rows;
+    try {
+      rows = await sb
+          .from('profiles')
+          .select('id,email,display_name,avatar_path,avatar_url')
+          .inFilter('id', ids);
+    } catch (_) {
+      rows = await sb
+          .from('profiles')
+          .select('id,email,display_name')
+          .inFilter('id', ids);
+    }
+    return (rows as List)
+        .map((e) => UserProfileModel.fromMap(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<Map<String, UserProfileModel>> familyProfileMap(String familyId) async {
+    final profiles = await familyProfiles(familyId);
+    return {for (final profile in profiles) profile.id: profile};
+  }
+
+  Future<void> updateCurrentProfileName(String displayName) async {
+    final user = sb.auth.currentUser;
+    if (user == null) return;
+    final clean = displayName.trim();
+    if (clean.isEmpty) return;
+    try {
+      await sb.from('profiles').upsert({
+        'id': user.id,
+        'email': user.email,
+        'display_name': clean,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id');
+    } catch (_) {
+      await sb.from('profiles').upsert({
+        'id': user.id,
+        'email': user.email,
+        'display_name': clean,
+      }, onConflict: 'id');
+    }
+  }
+
+  Future<void> pickAndUploadCurrentAvatar() async {
+    final user = sb.auth.currentUser;
+    if (user == null) return;
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (picked == null || picked.files.single.bytes == null) return;
+    final file = picked.files.single;
+    final ext = file.extension == null || file.extension!.trim().isEmpty
+        ? 'jpg'
+        : file.extension!.trim().toLowerCase();
+    final path = 'profile-avatars/${user.id}/${DateTime.now().millisecondsSinceEpoch}_${_uuid.v4()}.$ext';
+    await sb.storage.from(StorageService.bucket).uploadBinary(
+          path,
+          file.bytes!,
+          fileOptions: FileOptions(
+            contentType: lookupMimeType(file.name, headerBytes: file.bytes!) ?? 'image/jpeg',
+            upsert: true,
+          ),
+        );
+    try {
+      await sb.from('profiles').upsert({
+        'id': user.id,
+        'email': user.email,
+        'avatar_path': path,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id');
+    } catch (_) {
+      await sb.from('profiles').upsert({
+        'id': user.id,
+        'email': user.email,
+        'avatar_path': path,
+      }, onConflict: 'id');
+    }
+  }
+
+  Future<String?> signedAvatarUrl(String? path, {int expiresIn = 3600}) async {
+    if (path == null || path.trim().isEmpty) return null;
+    return sb.storage.from(StorageService.bucket).createSignedUrl(path, expiresIn);
+  }
 
   Stream<List<ShoppingItemModel>> shopping(String familyId) {
     return sb
@@ -168,16 +296,26 @@ class Repositories {
   }
 
   Stream<List<ChatMessageModel>> chat(String familyId) {
-    // Compatible con tu tabla actual: chat_messages(content, author_id, created_at).
-    // No dependemos de vistas SQL adicionales como chat_message_feed.
     return sb
         .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('family_id', familyId)
-        .map((rows) => rows
-            .map((e) => ChatMessageModel.fromMap(e))
-            .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+        .map((rows) async {
+          final profiles = await familyProfileMap(familyId);
+          final messages = rows.map((row) {
+            final map = Map<String, dynamic>.from(row);
+            final authorId = (map['created_by'] ?? map['author_id'] ?? '').toString();
+            final profile = profiles[authorId];
+            if (profile != null) {
+              map['author_name'] = profile.displayName;
+              map['author_avatar_path'] = profile.avatarPath;
+            }
+            return ChatMessageModel.fromMap(map);
+          }).toList();
+          messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          return messages;
+        })
+        .asyncMap((future) => future);
   }
 
   Future<void> sendChat({

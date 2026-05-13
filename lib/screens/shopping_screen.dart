@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/app_models.dart';
 import '../providers/app_providers.dart';
 import '../widgets/pro_widgets.dart';
 
@@ -37,6 +38,9 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (familyId) {
         if (familyId == null) return const RequireFamily();
+
+        final profilesAsync = ref.watch(familyProfilesProvider(familyId));
+        final profiles = profilesAsync.maybeWhen(data: (value) => value, orElse: () => const <String, UserProfileModel>{});
 
         return StreamBuilder(
           stream: repo.shopping(familyId),
@@ -174,7 +178,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                             decoration: item.isDone ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        subtitle: item.qty == null || item.qty!.isEmpty ? null : Text(item.qty!),
+                        subtitle: _ShoppingSubtitle(item: item, profile: profiles[item.addedBy]),
                         secondary: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => repo.deleteShopping(item.id),
@@ -217,5 +221,45 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
     );
     textCtrl.clear();
     qtyCtrl.clear();
+  }
+}
+
+
+class _ShoppingSubtitle extends StatelessWidget {
+  const _ShoppingSubtitle({required this.item, required this.profile});
+
+  final ShoppingItemModel item;
+  final UserProfileModel? profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <Widget>[];
+    if (item.qty != null && item.qty!.trim().isNotEmpty) {
+      lines.add(Text(item.qty!.trim()));
+    }
+    if (profile != null) {
+      lines.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UserAvatar(initials: profile!.initials, avatarPath: profile!.avatarPath, radius: 10),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Añadido por ${profile!.displayName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (lines.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines);
   }
 }

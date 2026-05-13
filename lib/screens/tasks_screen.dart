@@ -37,6 +37,9 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (familyId) {
         if (familyId == null) return const RequireFamily();
+        final profilesAsync = ref.watch(familyProfilesProvider(familyId));
+        final profiles = profilesAsync.maybeWhen(data: (value) => value, orElse: () => const <String, UserProfileModel>{});
+
         return StreamBuilder<List<TaskModel>>(
           stream: repo.tasks(familyId),
           builder: (context, snapshot) {
@@ -154,7 +157,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                             decoration: task.isDone ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        subtitle: task.notes == null || task.notes!.isEmpty ? null : Text(task.notes!),
+                        subtitle: _TaskSubtitle(task: task, creator: profiles[task.createdBy], assignee: profiles[task.assignedTo]),
                         secondary: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => repo.deleteTask(task.id),
@@ -180,5 +183,48 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         );
     titleCtrl.clear();
     notesCtrl.clear();
+  }
+}
+
+
+class _TaskSubtitle extends StatelessWidget {
+  const _TaskSubtitle({required this.task, required this.creator, required this.assignee});
+
+  final TaskModel task;
+  final UserProfileModel? creator;
+  final UserProfileModel? assignee;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[];
+    if (task.notes != null && task.notes!.trim().isNotEmpty) {
+      children.add(Text(task.notes!.trim()));
+    }
+    final visibleProfile = assignee ?? creator;
+    if (visibleProfile != null) {
+      final label = assignee != null ? 'Asignada a' : 'Creada por';
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UserAvatar(initials: visibleProfile.initials, avatarPath: visibleProfile.avatarPath, radius: 10),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  '$label ${visibleProfile.displayName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
   }
 }

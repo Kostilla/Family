@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/app_models.dart';
 import '../services/auth_service.dart';
 import '../services/family_service.dart';
 import '../services/push_service.dart';
@@ -42,4 +43,12 @@ final familyModulesProvider = FutureProvider<EnabledModules>((ref) async {
     for (final definition in familyModuleDefinitions) definition.key: definition.defaultEnabled,
     for (final setting in settings) setting.key: setting.enabled,
   });
+});
+
+final currentProfileProvider = FutureProvider<UserProfileModel?>((ref) async {
+  return ref.watch(repositoriesProvider).currentProfile();
+});
+
+final familyProfilesProvider = FutureProvider.family<Map<String, UserProfileModel>, String>((ref, familyId) async {
+  return ref.watch(repositoriesProvider).familyProfileMap(familyId);
 });
